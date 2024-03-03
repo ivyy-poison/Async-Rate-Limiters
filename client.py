@@ -5,6 +5,7 @@ import random
 import logging
 import contextlib
 from datetime import datetime
+import collections
 
 import asyncio
 from asyncio import Queue
@@ -69,33 +70,61 @@ class RateLimiterTimeout(Exception):
     pass
 
 
+# class RateLimiter:
+#     def __init__(self, per_second_rate, min_duration_ms_between_requests):
+#         self.__per_second_rate = per_second_rate
+#         self.__min_duration_ms_between_requests = min_duration_ms_between_requests
+#         self.__last_request_time = 0
+#         self.__request_times = [0] * per_second_rate
+#         self.__curr_idx = 0
+
+#     @contextlib.asynccontextmanager
+#     async def acquire(self, timeout_ms=0):
+#         enter_ms = timestamp_ms()
+#         while True:
+#             now = timestamp_ms()
+#             if now - enter_ms > timeout_ms > 0:
+#                 raise RateLimiterTimeout()
+
+#             if now - self.__last_request_time <= self.__min_duration_ms_between_requests:
+#                 await asyncio.sleep(0.00001)
+#                 continue
+
+#             if now - self.__request_times[self.__curr_idx] <= 1000:
+#                 await asyncio.sleep(0.00001)
+#                 continue
+
+#             break
+#         self.__last_request_time = self.__request_times[self.__curr_idx] = now
+#         self.__curr_idx = (self.__curr_idx + 1) % self.__per_second_rate
+#         yield self
+
 class RateLimiter:
     def __init__(self, per_second_rate, min_duration_ms_between_requests):
         self.__per_second_rate = per_second_rate
         self.__min_duration_ms_between_requests = min_duration_ms_between_requests
-        self.__last_request_time = 0
-        self.__request_times = [0] * per_second_rate
-        self.__curr_idx = 0
+        self.__request_times = collections.deque(maxlen=per_second_rate)
 
     @contextlib.asynccontextmanager
     async def acquire(self, timeout_ms=0):
         enter_ms = timestamp_ms()
         while True:
             now = timestamp_ms()
-            if now - enter_ms > timeout_ms > 0:
+            if timeout_ms > 0 and now - enter_ms > timeout_ms:
                 raise RateLimiterTimeout()
 
-            if now - self.__last_request_time <= self.__min_duration_ms_between_requests:
-                await asyncio.sleep(0.00001)
-                continue
+            # Remove timestamps older than 1 second
+            while self.__request_times and now - self.__request_times[0] > 1000:
+                self.__request_times.popleft()
 
-            if now - self.__request_times[self.__curr_idx] <= 1000:
-                await asyncio.sleep(0.00001)
-                continue
+            # If the rate limit has been hit, sleep until the next request can be made
+            if len(self.__request_times) >= self.__per_second_rate:
+                sleep_time = (self.__request_times[0] + 1000 - now) / 1000
+                await asyncio.sleep(sleep_time)
+            else:
+                break
 
-            break
-        self.__last_request_time = self.__request_times[self.__curr_idx] = now
-        self.__curr_idx = (self.__curr_idx + 1) % self.__per_second_rate
+        self.__request_times.append(now)
         yield self
 
 
