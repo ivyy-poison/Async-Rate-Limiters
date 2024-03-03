@@ -89,21 +89,50 @@ class RateLimiter:
                 await asyncio.sleep(0.00001)
                 continue
 
-            if now - self.__request_times[self.__curr_idx] <= 800:
+            if now - self.__request_times[self.__curr_idx] <= 1000:
                 await asyncio.sleep(0.00001)
                 continue
 
             break
-
         self.__last_request_time = self.__request_times[self.__curr_idx] = now
         self.__curr_idx = (self.__curr_idx + 1) % self.__per_second_rate
         yield self
 
 
+class TokenBucketRateLimiter:
+    def __init__(self, tokens, min_duration_ms_between_requests):
+        fill_rate = 1 / min_duration_ms_between_requests
+        self.capacity = float(tokens)
+        self._tokens = float(tokens)
+        self.fill_rate = float(fill_rate)
+        self.timestamp = time.time()
+
+    def _refill(self):
+        now = time.time()
+        delta = now - self.timestamp
+        refill = self.fill_rate * delta
+        self._tokens = min(self.capacity, self._tokens + refill)
+        self.timestamp = now
+
+    @contextlib.asynccontextmanager
+    async def acquire(self, tokens=1):
+        if tokens < 0:
+            raise ValueError("Number of tokens to acquire must be non-negative")
+        while True:
+            self._refill()
+            if tokens <= self._tokens:
+                self._tokens -= tokens
+                break
+            else:
+                sleep_time = (tokens - self._tokens) / self.fill_rate
+                await asyncio.sleep(1.0)
+        yield
+
 
 async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: logging.Logger):
     global count
     rate_limiter = RateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
+    # rate_limiter = TokenBucketRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
     async with aiohttp.ClientSession() as session:
         while True:
             request: Request = await queue.get()
@@ -114,7 +143,8 @@ async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: l
 
             try:
                 nonce = timestamp_ms()
-                async with rate_limiter.acquire(timeout_ms=remaining_ttl):
+                # async with rate_limiter.acquire(timeout_ms=remaining_ttl):
+                async with rate_limiter.acquire():
                     async with async_timeout.timeout(0.25):
                         data = {'api_key': api_key, 'nonce': nonce, 'req_id': request.req_id}
                         async with session.request('GET',
