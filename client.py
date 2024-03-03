@@ -86,11 +86,11 @@ class RateLimiter:
                 raise RateLimiterTimeout()
 
             if now - self.__last_request_time <= self.__min_duration_ms_between_requests:
-                await asyncio.sleep(0.001)
+                await asyncio.sleep(0.00001)
                 continue
 
-            if now - self.__request_times[self.__curr_idx] <= 1000:
-                await asyncio.sleep(0.001)
+            if now - self.__request_times[self.__curr_idx] <= 800:
+                await asyncio.sleep(0.00001)
                 continue
 
             break
@@ -115,7 +115,7 @@ async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: l
             try:
                 nonce = timestamp_ms()
                 async with rate_limiter.acquire(timeout_ms=remaining_ttl):
-                    async with async_timeout.timeout(1.0):
+                    async with async_timeout.timeout(0.25):
                         data = {'api_key': api_key, 'nonce': nonce, 'req_id': request.req_id}
                         async with session.request('GET',
                                                    url,
