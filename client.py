@@ -1,8 +1,10 @@
 import sys
+import os
 import time
 import random
 import logging
 import contextlib
+from datetime import datetime
 
 import asyncio
 from asyncio import Queue
@@ -153,7 +155,23 @@ def main():
     loop.run_until_complete(asyncio.sleep(2))
 
     # Print the total number of successful requests
-    print(f"Total successful requests: {count}")
+    log_count_to_file(count)
+
+def log_count_to_file(count):
+    # Check if the file exists
+    if os.path.exists("output.txt"):
+        # If it exists, read the existing content
+        with open("output.txt", "r") as f:
+            content = f.read()
+    else:
+        content = ""
+
+    # Get the current time in a readable format
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Write the current time and count to the top of the file
+    with open("output.txt", "w") as f:
+        f.write(f"Current time: {current_time}, Successful requests: {count}\n{content}")
 
 
 if __name__ == '__main__':
