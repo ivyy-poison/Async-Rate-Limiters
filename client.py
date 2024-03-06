@@ -47,63 +47,45 @@ def timestamp_ms() -> int:
 
 # endregion
 
-
-def configure_logger(name=None):
-    logger = logging.getLogger(name)
-    if name is None:
-        # only add handlers to root logger
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-        sh = logging.StreamHandler(sys.stdout)
-        sh.setFormatter(formatter)
-        logger.addHandler(sh)
-
-        fh = logging.FileHandler(f"async-debug.log", mode="a")
-        fh.setFormatter(formatter)
-        logger.addHandler(fh)
-
-        logger.setLevel(logging.DEBUG)
-    return logger
-
-
 class RateLimiterTimeout(Exception):
     pass
-
-
-# class RateLimiter:
-#     def __init__(self, per_second_rate, min_duration_ms_between_requests):
-#         self.__per_second_rate = per_second_rate
-#         self.__min_duration_ms_between_requests = min_duration_ms_between_requests
-#         self.__last_request_time = 0
-#         self.__request_times = [0] * per_second_rate
-#         self.__curr_idx = 0
-
-#     @contextlib.asynccontextmanager
-#     async def acquire(self, timeout_ms=0):
-#         enter_ms = timestamp_ms()
-#         while True:
-#             now = timestamp_ms()
-#             if now - enter_ms > timeout_ms > 0:
-#                 raise RateLimiterTimeout()
-
-#             if now - self.__last_request_time <= self.__min_duration_ms_between_requests:
-#                 await asyncio.sleep(0.00001)
-#                 continue
-
-#             if now - self.__request_times[self.__curr_idx] <= 1000:
-#                 await asyncio.sleep(0.00001)
-#                 continue
-
-#             break
-#         self.__last_request_time = self.__request_times[self.__curr_idx] = now
-#         self.__curr_idx = (self.__curr_idx + 1) % self.__per_second_rate
-#         yield self
 
 class RateLimiter:
     def __init__(self, per_second_rate, min_duration_ms_between_requests):
         self.__per_second_rate = per_second_rate
         self.__min_duration_ms_between_requests = min_duration_ms_between_requests
+        self.__last_request_time = 0
+        self.__request_times = [0] * per_second_rate
+        self.__curr_idx = 0
+
+    @contextlib.asynccontextmanager
+    async def acquire(self, timeout_ms=0):
+        enter_ms = timestamp_ms()
+        while True:
+            now = timestamp_ms()
+            if now - enter_ms > timeout_ms > 0:
+                raise RateLimiterTimeout()
+
+            if now - self.__last_request_time <= self.__min_duration_ms_between_requests:
+                await asyncio.sleep(0.001)
+                continue
+
+            if now - self.__request_times[self.__curr_idx] <= 1000:
+                await asyncio.sleep(0.001)
+                continue
+
+            break
+
+        self.__last_request_time = self.__request_times[self.__curr_idx] = now
+        self.__curr_idx = (self.__curr_idx + 1) % self.__per_second_rate
+        yield self
+
+class DequeRateLimiter:
+    def __init__(self, per_second_rate, min_duration_ms_between_requests):
+        self.__per_second_rate = per_second_rate
+        self.__min_duration_ms_between_requests = min_duration_ms_between_requests
         self.__request_times = collections.deque(maxlen=per_second_rate)
+        self.__delay = 0.15 / per_second_rate  
 
     @contextlib.asynccontextmanager
     async def acquire(self, timeout_ms=0):
@@ -125,14 +107,16 @@ class RateLimiter:
                 break
 
         self.__request_times.append(now)
+        await asyncio.sleep(self.__delay)
         yield self
 
 
 class TokenBucketRateLimiter:
     def __init__(self, tokens, min_duration_ms_between_requests):
-        fill_rate = 1 / min_duration_ms_between_requests
-        self.capacity = float(tokens)
-        self._tokens = float(tokens)
+        fill_rate = min_duration_ms_between_requests
+
+        self.capacity = tokens
+        self._tokens = tokens
         self.fill_rate = float(fill_rate)
         self.timestamp = time.time()
 
@@ -154,13 +138,38 @@ class TokenBucketRateLimiter:
                 break
             else:
                 sleep_time = (tokens - self._tokens) / self.fill_rate
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(1.0)  # sleep for the calculated sleep_time
         yield
 
 
+def configure_logger(name=None):
+    logger = logging.getLogger(name)
+    if name is None:
+        # only add handlers to root logger
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+        sh = logging.StreamHandler(sys.stdout)
+        sh.setFormatter(formatter)
+        logger.addHandler(sh)
+
+        fh = logging.FileHandler(f"async-debug.log", mode="a")
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
+
+        logger.setLevel(logging.DEBUG)
+    return logger
+
+
+
+
+
+
+
+
 async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: logging.Logger):
-    global count
+    global count, ignored_count, error_count
     rate_limiter = RateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
+    rate_limiter = DequeRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
     # rate_limiter = TokenBucketRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
     async with aiohttp.ClientSession() as session:
         while True:
@@ -173,8 +182,8 @@ async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: l
             try:
                 nonce = timestamp_ms()
                 # async with rate_limiter.acquire(timeout_ms=remaining_ttl):
-                async with rate_limiter.acquire():
-                    async with async_timeout.timeout(0.25):
+                async with rate_limiter.acquire() as limiter:
+                    async with async_timeout.timeout(1.0):
                         data = {'api_key': api_key, 'nonce': nonce, 'req_id': request.req_id}
                         async with session.request('GET',
                                                    url,
@@ -184,10 +193,11 @@ async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: l
                                 logger.info(f"API response: status {resp.status}, resp {json}")
                                 count += 1
                             else:
+                                error_count += 1
                                 logger.warning(f"API response: status {resp.status}, resp {json}")
             except RateLimiterTimeout:
                 logger.warning(f"ignoring request {request.req_id} in limiter due to TTL")
-
+        
 
 class Request:
     def __init__(self, req_id):
@@ -195,8 +205,12 @@ class Request:
         self.create_time = timestamp_ms()
 
 count = 0
+ignored_count = 0
+error_count = 0
 
 def main():
+
+
     url = "http://127.0.0.1:9999/api/request"
     loop = asyncio.get_event_loop()
     queue = Queue()
@@ -211,7 +225,7 @@ def main():
     # loop.run_forever()
         
     # Run the event loop for 5 seconds
-    loop.run_until_complete(asyncio.sleep(2))
+    loop.run_until_complete(asyncio.sleep(10))
 
     # Print the total number of successful requests
     log_count_to_file(count)
@@ -230,7 +244,7 @@ def log_count_to_file(count):
 
     # Write the current time and count to the top of the file
     with open("output.txt", "w") as f:
-        f.write(f"Current time: {current_time}, Successful requests: {count}\n{content}")
+        f.write(f"Current time: {current_time}, Successful requests: {count}, Ignored requests: {ignored_count}, 429 errors: {error_count}\n{content}")
 
 
 if __name__ == '__main__':
