@@ -47,6 +47,23 @@ def timestamp_ms() -> int:
 
 # endregion
 
+def configure_logger(name=None):
+    logger = logging.getLogger(name)
+    if name is None:
+        # only add handlers to root logger
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+        sh = logging.StreamHandler(sys.stdout)
+        sh.setFormatter(formatter)
+        logger.addHandler(sh)
+
+        fh = logging.FileHandler(f"async-debug.log", mode="a")
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
+
+        logger.setLevel(logging.DEBUG)
+    return logger
+
 class RateLimiterTimeout(Exception):
     pass
 
@@ -85,7 +102,7 @@ class DequeRateLimiter:
         self.__per_second_rate = per_second_rate
         self.__min_duration_ms_between_requests = min_duration_ms_between_requests
         self.__request_times = collections.deque(maxlen=per_second_rate)
-        self.__delay = 0.15 / per_second_rate  
+        # self.__delay = 0.15 / per_second_rate  
 
     @contextlib.asynccontextmanager
     async def acquire(self, timeout_ms=0):
@@ -107,7 +124,7 @@ class DequeRateLimiter:
                 break
 
         self.__request_times.append(now)
-        await asyncio.sleep(self.__delay)
+        # await asyncio.sleep(self.__delay)
         yield self
 
 
@@ -141,33 +158,24 @@ class TokenBucketRateLimiter:
                 await asyncio.sleep(1.0)  # sleep for the calculated sleep_time
         yield
 
+class Counters:
+    def __init__(self):
+        self.count = 0
+        self.ignored_count = 0
+        self.error_count = 0
 
-def configure_logger(name=None):
-    logger = logging.getLogger(name)
-    if name is None:
-        # only add handlers to root logger
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    def increment_count(self):
+        self.count += 1
 
-        sh = logging.StreamHandler(sys.stdout)
-        sh.setFormatter(formatter)
-        logger.addHandler(sh)
+    def increment_ignored_count(self):
+        self.ignored_count += 1
 
-        fh = logging.FileHandler(f"async-debug.log", mode="a")
-        fh.setFormatter(formatter)
-        logger.addHandler(fh)
+    def increment_error_count(self):
+        self.error_count += 1
 
-        logger.setLevel(logging.DEBUG)
-    return logger
-
-
-
-
-
-
-
+counters = Counters()
 
 async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: logging.Logger):
-    global count, ignored_count, error_count
     rate_limiter = RateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
     rate_limiter = DequeRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
     # rate_limiter = TokenBucketRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
@@ -176,7 +184,9 @@ async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: l
             request: Request = await queue.get()
             remaining_ttl = REQUEST_TTL_MS - (timestamp_ms() - request.create_time)
             if remaining_ttl <= 0:
+                counters.increment_ignored_count()
                 logger.warning(f"ignoring request {request.req_id} from queue due to TTL")
+                # await queue.put(request)
                 continue
 
             try:
@@ -191,11 +201,12 @@ async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: l
                             json = await resp.json()
                             if json['status'] == 'OK':
                                 logger.info(f"API response: status {resp.status}, resp {json}")
-                                count += 1
+                                counters.increment_count()
                             else:
-                                error_count += 1
+                                counters.increment_error_count()
                                 logger.warning(f"API response: status {resp.status}, resp {json}")
             except RateLimiterTimeout:
+                counters.increment_ignored_count()
                 logger.warning(f"ignoring request {request.req_id} in limiter due to TTL")
         
 
@@ -204,9 +215,7 @@ class Request:
         self.req_id = req_id
         self.create_time = timestamp_ms()
 
-count = 0
-ignored_count = 0
-error_count = 0
+
 
 def main():
 
@@ -228,9 +237,9 @@ def main():
     loop.run_until_complete(asyncio.sleep(10))
 
     # Print the total number of successful requests
-    log_count_to_file(count)
+    log_count_to_file()
 
-def log_count_to_file(count):
+def log_count_to_file():
     # Check if the file exists
     if os.path.exists("output.txt"):
         # If it exists, read the existing content
@@ -241,6 +250,7 @@ def log_count_to_file(count):
 
     # Get the current time in a readable format
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    count, ignored_count, error_count = counters.count, counters.ignored_count, counters.error_count
 
     # Write the current time and count to the top of the file
     with open("output.txt", "w") as f:
