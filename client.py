@@ -84,11 +84,9 @@ class RateLimiter:
                 raise RateLimiterTimeout()
 
             if now - self.__last_request_time <= self.__min_duration_ms_between_requests:
-                await asyncio.sleep(0.001)
                 continue
 
             if now - self.__request_times[self.__curr_idx] <= 1000:
-                await asyncio.sleep(0.001)
                 continue
 
             break
@@ -100,38 +98,33 @@ class RateLimiter:
 class DequeRateLimiter:
     def __init__(self, per_second_rate, min_duration_ms_between_requests):
         self.__per_second_rate = per_second_rate
-        self.__min_duration_ms_between_requests = min_duration_ms_between_requests
         self.__request_times = collections.deque(maxlen=per_second_rate)
-        # self.__delay = 0.15 / per_second_rate  
+        self.__delay = 0.05 / per_second_rate  
+        self.__required_delay = min_duration_ms_between_requests / 1000
 
     @contextlib.asynccontextmanager
     async def acquire(self, timeout_ms=0):
-        enter_ms = timestamp_ms()
-        while True:
-            now = timestamp_ms()
-            if timeout_ms > 0 and now - enter_ms > timeout_ms:
-                raise RateLimiterTimeout()
+        now = time.time()
+        if len(self.__request_times) == self.__per_second_rate:
+            # Time since the oldest request
+            oldest_request_time = self.__request_times[0]
+            time_passed_since_oldest = now - oldest_request_time
 
-            # Remove timestamps older than 1 second
-            while self.__request_times and now - self.__request_times[0] > 1000:
-                self.__request_times.popleft()
+            # If we're within the rate limit, calculate the necessary delay
+            if time_passed_since_oldest < self.__required_delay:
+                sleep_duration = self.__required_delay - time_passed_since_oldest
+                if timeout_ms > 0 and sleep_duration > timeout_ms / 1000:
+                    raise RateLimiterTimeout()
+                await asyncio.sleep(sleep_duration)
 
-            # If the rate limit has been hit, sleep until the next request can be made
-            if len(self.__request_times) >= self.__per_second_rate:
-                sleep_time = (self.__request_times[0] + 1000 - now) / 1000
-                await asyncio.sleep(sleep_time)
-            else:
-                break
-
-        self.__request_times.append(now)
-        # await asyncio.sleep(self.__delay)
+        # Append the current time after ensuring we're respecting the rate limit
+        self.__request_times.append(time.time())
         yield self
 
 
 class TokenBucketRateLimiter:
     def __init__(self, tokens, min_duration_ms_between_requests):
         fill_rate = min_duration_ms_between_requests
-
         self.capacity = tokens
         self._tokens = tokens
         self.fill_rate = float(fill_rate)
@@ -155,7 +148,7 @@ class TokenBucketRateLimiter:
                 break
             else:
                 sleep_time = (tokens - self._tokens) / self.fill_rate
-                await asyncio.sleep(1.0)  # sleep for the calculated sleep_time
+                continue
         yield
 
 class Counters:
@@ -186,13 +179,11 @@ async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: l
             if remaining_ttl <= 0:
                 counters.increment_ignored_count()
                 logger.warning(f"ignoring request {request.req_id} from queue due to TTL")
-                # await queue.put(request)
                 continue
 
             try:
                 nonce = timestamp_ms()
-                # async with rate_limiter.acquire(timeout_ms=remaining_ttl):
-                async with rate_limiter.acquire() as limiter:
+                async with rate_limiter.acquire(timeout_ms=remaining_ttl):
                     async with async_timeout.timeout(1.0):
                         data = {'api_key': api_key, 'nonce': nonce, 'req_id': request.req_id}
                         async with session.request('GET',
@@ -218,8 +209,6 @@ class Request:
 
 
 def main():
-
-
     url = "http://127.0.0.1:9999/api/request"
     loop = asyncio.get_event_loop()
     queue = Queue()
@@ -229,8 +218,6 @@ def main():
 
     for api_key in VALID_API_KEYS:
         loop.create_task(exchange_facing_worker(url=url, api_key=api_key, queue=queue, logger=logger))
-
-
     # loop.run_forever()
         
     # Run the event loop for 5 seconds
