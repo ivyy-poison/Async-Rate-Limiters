@@ -67,6 +67,11 @@ def configure_logger(name=None):
 class RateLimiterTimeout(Exception):
     pass
 
+class Request:
+    def __init__(self, req_id):
+        self.req_id = req_id
+        self.create_time = timestamp_ms()
+
 class RateLimiter:
     def __init__(self, per_second_rate, min_duration_ms_between_requests):
         self.__per_second_rate = per_second_rate
@@ -84,9 +89,11 @@ class RateLimiter:
                 raise RateLimiterTimeout()
 
             if now - self.__last_request_time <= self.__min_duration_ms_between_requests:
+                await asyncio.sleep((self.__min_duration_ms_between_requests - (now - self.__last_request_time)) / 1000)
                 continue
 
             if now - self.__request_times[self.__curr_idx] <= 1000:
+                await asyncio.sleep((1000 - (now - self.__request_times[self.__curr_idx])) / 1000)
                 continue
 
             break
@@ -95,30 +102,30 @@ class RateLimiter:
         self.__curr_idx = (self.__curr_idx + 1) % self.__per_second_rate
         yield self
 
+
 class DequeRateLimiter:
     def __init__(self, per_second_rate, min_duration_ms_between_requests):
         self.__per_second_rate = per_second_rate
-        self.__request_times = collections.deque(maxlen=per_second_rate)
-        self.__delay = 0.05 / per_second_rate  
-        self.__required_delay = min_duration_ms_between_requests / 1000
+        self.__request_times = collections.deque(maxlen=per_second_rate-1)
 
     @contextlib.asynccontextmanager
     async def acquire(self, timeout_ms=0):
-        now = time.time()
-        if len(self.__request_times) == self.__per_second_rate:
-            # Time since the oldest request
+        now = timestamp_ms()
+
+        while len(self.__request_times) > 0 and now - self.__request_times[0] >= 1000:
+            self.__request_times.popleft()
+
+        if len(self.__request_times) == self.__per_second_rate-1:
+            
             oldest_request_time = self.__request_times[0]
-            time_passed_since_oldest = now - oldest_request_time
+            time_to_wait = 1000 - (now - oldest_request_time)
 
-            # If we're within the rate limit, calculate the necessary delay
-            if time_passed_since_oldest < self.__required_delay:
-                sleep_duration = self.__required_delay - time_passed_since_oldest
-                if timeout_ms > 0 and sleep_duration > timeout_ms / 1000:
-                    raise RateLimiterTimeout()
-                await asyncio.sleep(sleep_duration)
+            if timeout_ms > 0 and time_to_wait > timeout_ms:
+                raise RateLimiterTimeout()
 
-        # Append the current time after ensuring we're respecting the rate limit
-        self.__request_times.append(time.time())
+            await asyncio.sleep(time_to_wait / 1000)
+
+        self.__request_times.append(timestamp_ms())  # Recalculate now to be more accurate.
         yield self
 
 
@@ -126,12 +133,12 @@ class TokenBucketRateLimiter:
     def __init__(self, tokens, min_duration_ms_between_requests):
         fill_rate = min_duration_ms_between_requests
         self.capacity = tokens
-        self._tokens = tokens
+        self._tokens = tokens - 1
         self.fill_rate = float(fill_rate)
-        self.timestamp = time.time()
+        self.timestamp = timestamp_ms()
 
     def _refill(self):
-        now = time.time()
+        now =  timestamp_ms()
         delta = now - self.timestamp
         refill = self.fill_rate * delta
         self._tokens = min(self.capacity, self._tokens + refill)
@@ -166,12 +173,12 @@ class Counters:
     def increment_error_count(self):
         self.error_count += 1
 
-counters = Counters()
+
 
 async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: logging.Logger):
-    rate_limiter = RateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
+    # rate_limiter = RateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
     rate_limiter = DequeRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
-    # rate_limiter = TokenBucketRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
+    rate_limiter = TokenBucketRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
     async with aiohttp.ClientSession() as session:
         while True:
             request: Request = await queue.get()
@@ -183,7 +190,8 @@ async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: l
 
             try:
                 nonce = timestamp_ms()
-                async with rate_limiter.acquire(timeout_ms=remaining_ttl):
+                # async with rate_limiter.acquire(timeout_ms=remaining_ttl):
+                async with rate_limiter.acquire():
                     async with async_timeout.timeout(1.0):
                         data = {'api_key': api_key, 'nonce': nonce, 'req_id': request.req_id}
                         async with session.request('GET',
@@ -200,13 +208,6 @@ async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: l
                 counters.increment_ignored_count()
                 logger.warning(f"ignoring request {request.req_id} in limiter due to TTL")
         
-
-class Request:
-    def __init__(self, req_id):
-        self.req_id = req_id
-        self.create_time = timestamp_ms()
-
-
 
 def main():
     url = "http://127.0.0.1:9999/api/request"
@@ -245,4 +246,5 @@ def log_count_to_file():
 
 
 if __name__ == '__main__':
+    counters = Counters()
     main()
