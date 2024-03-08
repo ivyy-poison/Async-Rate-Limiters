@@ -6,12 +6,13 @@ import logging
 import contextlib
 from datetime import datetime
 import collections
+import cProfile
 
 import asyncio
 from asyncio import Queue
 import aiohttp
 import async_timeout
-
+from models import Counters
 
 # region: DO NOT CHANGE - the code within this region can be assumed to be "correct"
 
@@ -158,24 +159,7 @@ class TokenBucketRateLimiter:
                 continue
         yield
 
-class Counters:
-    def __init__(self):
-        self.count = 0
-        self.ignored_count = 0
-        self.error_count = 0
-
-    def increment_count(self):
-        self.count += 1
-
-    def increment_ignored_count(self):
-        self.ignored_count += 1
-
-    def increment_error_count(self):
-        self.error_count += 1
-
-
-
-async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: logging.Logger):
+async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: logging.Logger, counters: Counters):
     # rate_limiter = RateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
     rate_limiter = DequeRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
     # rate_limiter = TokenBucketRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
@@ -213,21 +197,22 @@ def main():
     url = "http://127.0.0.1:9999/api/request"
     loop = asyncio.get_event_loop()
     queue = Queue()
+    counters = Counters()
 
     logger = configure_logger()
     loop.create_task(generate_requests(queue=queue))
 
     for api_key in VALID_API_KEYS:
-        loop.create_task(exchange_facing_worker(url=url, api_key=api_key, queue=queue, logger=logger))
+        loop.create_task(exchange_facing_worker(url=url, api_key=api_key, queue=queue, logger=logger, counters=counters))
     # loop.run_forever()
         
     # Run the event loop for 5 seconds
     loop.run_until_complete(asyncio.sleep(10))
 
     # Print the total number of successful requests
-    log_count_to_file()
+    log_count_to_file(counters)
 
-def log_count_to_file():
+def log_count_to_file(counters):
     # Check if the file exists
     if os.path.exists("output.txt"):
         # If it exists, read the existing content
@@ -246,5 +231,6 @@ def log_count_to_file():
 
 
 if __name__ == '__main__':
-    counters = Counters()
-    main()
+    profiler = cProfile.Profile()
+    profiler.runcall(main)
+    profiler.print_stats()
