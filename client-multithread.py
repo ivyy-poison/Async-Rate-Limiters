@@ -1,13 +1,12 @@
 # Standard library imports
 import cProfile
+import psutil
 from multiprocessing import Process, Queue
 
 # Third-party libraries
-import aiohttp
-import asyncio
 from models import MultithreadedCounters as Counters
 from rate_limiters import MultithreadDequeRateLimiter as DequeRateLimiter
-from config import VALID_API_KEYS, REQUEST_TTL_MS, PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS
+from config import VALID_API_KEYS
 from workers import (
     exchange_facing_worker_multithread as exchange_facing_worker, 
     exchange_facing_worker_multithread_test as exchange_facing_worker_test, 
@@ -33,8 +32,9 @@ def main():
         worker.start()
         workers.append(worker)
 
+    print('Number of child processes after starting workers:', len(psutil.Process().children(recursive=True)))
+
     # Wait for all processes to finish
-    
     for worker in workers:
         worker.join()
 
