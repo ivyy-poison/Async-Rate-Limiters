@@ -5,12 +5,11 @@ import asyncio
 import random
 import async_timeout
 from models import Counters, Request, RateLimiterTimeout
-from rate_limiters import DequeRateLimiter
+from rate_limiters import DequeRateLimiter, RateLimiter, TokenBucketRateLimiter
 from utils import timestamp_ms
 from config import VALID_API_KEYS, REQUEST_TTL_MS, PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS
 
 # region: DO NOT CHANGE - the code within this region can be assumed to be "correct"
-
 
 async def generate_requests(queue: Queue):
     """
