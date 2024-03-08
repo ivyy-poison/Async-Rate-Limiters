@@ -106,7 +106,7 @@ class RateLimiter:
 class DequeRateLimiter:
     def __init__(self, per_second_rate, min_duration_ms_between_requests):
         self.__per_second_rate = per_second_rate
-        self.__request_times = collections.deque(maxlen=per_second_rate-1)
+        self.__request_times = collections.deque(maxlen=per_second_rate)
 
     @contextlib.asynccontextmanager
     async def acquire(self, timeout_ms=0):
@@ -115,7 +115,7 @@ class DequeRateLimiter:
         while len(self.__request_times) > 0 and now - self.__request_times[0] >= 1000:
             self.__request_times.popleft()
 
-        if len(self.__request_times) == self.__per_second_rate-1:
+        if len(self.__request_times) >= self.__per_second_rate-1:
             
             oldest_request_time = self.__request_times[0]
             time_to_wait = 1000 - (now - oldest_request_time)
@@ -178,7 +178,7 @@ class Counters:
 async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: logging.Logger):
     # rate_limiter = RateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
     rate_limiter = DequeRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
-    rate_limiter = TokenBucketRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
+    # rate_limiter = TokenBucketRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
     async with aiohttp.ClientSession() as session:
         while True:
             request: Request = await queue.get()
