@@ -1,7 +1,7 @@
 # Standard library imports
 import collections
 import contextlib
-import ctypes
+import cProfile
 from datetime import datetime
 from multiprocessing import Process, Queue, Value
 import os
@@ -210,4 +210,6 @@ def log_count_to_file(counters):
 
 
 if __name__ == '__main__':
-    main()
+    profiler = cProfile.Profile()
+    profiler.runcall(main)
+    profiler.print_stats()
