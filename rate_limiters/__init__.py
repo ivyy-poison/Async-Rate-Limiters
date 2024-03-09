@@ -1,2 +1,2 @@
 from .async_rate_limiters import DequeRateLimiter, RateLimiter, TokenBucketRateLimiter
-from .multithread_rate_limiters import DequeRateLimiter as MultithreadDequeRateLimiter
+from .multiprocess_rate_limiters import DequeRateLimiter as MultithreadDequeRateLimiter

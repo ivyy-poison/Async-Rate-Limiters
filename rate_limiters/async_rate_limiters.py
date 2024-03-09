@@ -20,11 +20,7 @@ class RateLimiter:
             if now - enter_ms > timeout_ms > 0:
                 raise RateLimiterTimeout()
 
-            if now - self.__last_request_time <= self.__min_duration_ms_between_requests:
-                await asyncio.sleep((self.__min_duration_ms_between_requests - (now - self.__last_request_time)) / 1000)
-                continue
-
-            if now - self.__request_times[self.__curr_idx] <= 1000:
+            if now - self.__request_times[self.__curr_idx] <= 1051:
                 await asyncio.sleep((1000 - (now - self.__request_times[self.__curr_idx])) / 1000)
                 continue
 
