@@ -4,6 +4,7 @@ import asyncio
 import collections
 from utils import timestamp_ms
 
+
 class RateLimiter:
     def __init__(self, per_second_rate, min_duration_ms_between_requests):
         self.__per_second_rate = per_second_rate
@@ -20,13 +21,40 @@ class RateLimiter:
             if now - enter_ms > timeout_ms > 0:
                 raise RateLimiterTimeout()
 
-            if now - self.__request_times[self.__curr_idx] <= 1051:
-                await asyncio.sleep((1000 - (now - self.__request_times[self.__curr_idx])) / 1000)
+            if now - self.__last_request_time <= self.__min_duration_ms_between_requests:
+                await asyncio.sleep(0.001)
+                continue
+
+            if now - self.__request_times[self.__curr_idx] <= 1000:
+                await asyncio.sleep(0.001)
                 continue
 
             break
 
         self.__last_request_time = self.__request_times[self.__curr_idx] = now
+        self.__curr_idx = (self.__curr_idx + 1) % self.__per_second_rate
+        yield self
+class CircularArrayRateLimiter:
+    def __init__(self, per_second_rate, min_duration_ms_between_requests):
+        self.__per_second_rate = per_second_rate
+        self.__min_duration_ms_between_requests = min_duration_ms_between_requests
+        self.__request_times = [0] * per_second_rate
+        self.__curr_idx = 0
+
+    @contextlib.asynccontextmanager
+    async def acquire(self, timeout_ms=0):
+        enter_ms = timestamp_ms()
+        while True:
+            now = timestamp_ms()
+            if now - enter_ms > timeout_ms > 0:
+                raise RateLimiterTimeout()
+
+            if now - self.__request_times[self.__curr_idx] <= 1051:
+                await asyncio.sleep((1000 - (now - self.__request_times[self.__curr_idx])) / 1000)
+                continue
+
+            break
+        self.__request_times[self.__curr_idx] = now
         self.__curr_idx = (self.__curr_idx + 1) % self.__per_second_rate
         yield self
 

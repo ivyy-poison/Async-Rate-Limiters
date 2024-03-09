@@ -5,7 +5,7 @@ import asyncio
 import random
 import async_timeout
 from models import Counters, Request, RateLimiterTimeout
-from rate_limiters import DequeRateLimiter, RateLimiter, TokenBucketRateLimiter
+from rate_limiters import DequeRateLimiter, CircularArrayRateLimiter, TokenBucketRateLimiter, RateLimiter
 from utils import timestamp_ms
 from config import VALID_API_KEYS, REQUEST_TTL_MS, PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS
 
@@ -31,8 +31,8 @@ async def generate_requests(queue: Queue):
 
 async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: logging.Logger, counters: Counters):
     rate_limiter = RateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
+    rate_limiter = CircularArrayRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
     # rate_limiter = DequeRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
-    # rate_limiter = TokenBucketRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
     async with aiohttp.ClientSession() as session:
         while True:
             request: Request = await queue.get()
