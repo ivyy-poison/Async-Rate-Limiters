@@ -17,8 +17,6 @@ from utils import log_count_to_file_multithread as log_count_to_file
 def main():
     url = "http://127.0.0.1:9999/api/request"
     counters = Counters()
-
-    # Create a queue for inter-process communication
     queue = Queue()
 
     # Start the request generator process
@@ -39,7 +37,7 @@ def main():
         worker.join()
 
     request_generator.terminate()
-    # Print the total number of successful requests
+
     log_count_to_file(counters)
 
 if __name__ == '__main__':

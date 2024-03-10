@@ -21,12 +21,12 @@ def main():
 
     for api_key in VALID_API_KEYS:
         loop.create_task(exchange_facing_worker(url=url, api_key=api_key, queue=queue, logger=logger, counters=counters))
+    
+    # Original implementation was to run the event loop forever
     # loop.run_forever()
         
-    # Run the event loop for 5 seconds
+    # For testing purposes, we run the event loop for 10 seconds, then log the result to output.txt
     loop.run_until_complete(asyncio.sleep(10))
-
-    # Print the total number of successful requests
     log_count_to_file(counters)
 
 
