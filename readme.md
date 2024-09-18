@@ -1,3 +1,15 @@
+Problem Statement: 
+
+Given a basic mock of a server that simulates an exchange, the task is to maximise the number of requests sent to the server, while ensuring that the rate limit is not exceeded.
+The server has a rate limit of 20 requests per second per API key, and will return a 429 error if the rate limit is exceeded. To simulate network latency, the server will randomly delay each request by up to 50ms.
+The goal is to implement a rate limiter on the client side that ensures that the rate limit is not exceeded, while maximising the number of requests sent to the server.
+
+Server Mock:
+- The server mock is a simple Flask server that simulates an exchange. 
+- It has a rate limit of 20 requests per second per API key, and will return a 429 error if the rate limit is exceeded. 
+- It also contains a stubbed list of API keys which it will accept and throws a 401 error if the API key is not in the list.
+- To simulate network latency, the server will randomly delay each request by up to 50ms.
+
 Approach:
 
 1. How do I benchmark the performance of the code?

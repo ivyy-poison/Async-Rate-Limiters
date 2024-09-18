@@ -1,5 +1,3 @@
-# region: DO NOT CHANGE - the code within this region can be assumed to be "correct"
-
 PER_SEC_RATE = 20
 DURATION_MS_BETWEEN_REQUESTS = int(1000 / PER_SEC_RATE)
 REQUEST_TTL_MS = 1000
@@ -9,4 +7,8 @@ VALID_API_KEYS = ['UT4NHL1J796WCHULA1750MXYF9F5JYA6',
                   'EUU46ID478HOO7GOXFASKPOZ9P91XGYS',
                   '46V5EZ5K2DFAGW85J18L50SGO25WJ5JE']
 
-# endregion
+## Server Configs ##
+SERVER_PORT = 9999
+ENDPOINT_STUB = "/api/request"
+MAX_LATENCY_MS = 50
+MAX_429_REJECTS = 10

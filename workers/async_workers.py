@@ -30,7 +30,7 @@ async def generate_requests(queue: Queue):
 # endregion
 
 async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: logging.Logger, counters: Counters):
-    rate_limiter = RateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
+    # rate_limiter = RateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
     rate_limiter = CircularArrayRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
     # rate_limiter = DequeRateLimiter(PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS)
     async with aiohttp.ClientSession() as session:
