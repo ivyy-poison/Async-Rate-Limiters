@@ -33,7 +33,6 @@ per_api_key_state = defaultdict(lambda: PerApiKeyState())
 @app.route(ENDPOINT_STUB, methods=["GET"])
 def api_request():
     api_key = request.values.get('api_key')
-    print(request.values.keys())
     if api_key not in VALID_API_KEYS:
         return jsonify({"status": "error", "error_msg": f"invalid api key {api_key}"}), 401
         # return abort(401)

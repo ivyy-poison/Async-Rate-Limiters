@@ -15,25 +15,28 @@ class RateLimiter:
 
     @contextlib.asynccontextmanager
     async def acquire(self, timeout_ms=0):
-        enter_ms = timestamp_ms()
-        while True:
+        try:
+            enter_ms = timestamp_ms()
+            while True:
+                now = timestamp_ms()
+                if now - enter_ms > timeout_ms > 0:
+                    raise RateLimiterTimeout()
+
+                if now - self.__last_request_time <= self.__min_duration_ms_between_requests:
+                    await asyncio.sleep(0.001)
+                    continue
+
+                if now - self.__request_times[self.__curr_idx] <= 1000:
+                    await asyncio.sleep(0.001)
+                    continue
+
+                break
+            yield self
+        finally:
             now = timestamp_ms()
-            if now - enter_ms > timeout_ms > 0:
-                raise RateLimiterTimeout()
+            self.__last_request_time = self.__request_times[self.__curr_idx] = now
+            self.__curr_idx = (self.__curr_idx + 1) % self.__per_second_rate
 
-            if now - self.__last_request_time <= self.__min_duration_ms_between_requests:
-                await asyncio.sleep(0.001)
-                continue
-
-            if now - self.__request_times[self.__curr_idx] <= 1000:
-                await asyncio.sleep(0.001)
-                continue
-
-            break
-
-        self.__last_request_time = self.__request_times[self.__curr_idx] = now
-        self.__curr_idx = (self.__curr_idx + 1) % self.__per_second_rate
-        yield self
 class CircularArrayRateLimiter:
     def __init__(self, per_second_rate, min_duration_ms_between_requests):
         self.__per_second_rate = per_second_rate
@@ -43,20 +46,23 @@ class CircularArrayRateLimiter:
 
     @contextlib.asynccontextmanager
     async def acquire(self, timeout_ms=0):
-        enter_ms = timestamp_ms()
-        while True:
+        try:
+            enter_ms = timestamp_ms()
+            while True:
+                now = timestamp_ms()
+                if now - enter_ms > timeout_ms > 0:
+                    raise RateLimiterTimeout()
+
+                if now - self.__request_times[self.__curr_idx] <= 1000:
+                    await asyncio.sleep((1000 - (now - self.__request_times[self.__curr_idx])) / 1000)
+                    continue
+
+                break
+            yield self
+        finally:
             now = timestamp_ms()
-            if now - enter_ms > timeout_ms > 0:
-                raise RateLimiterTimeout()
-
-            if now - self.__request_times[self.__curr_idx] <= 1051:
-                await asyncio.sleep((1000 - (now - self.__request_times[self.__curr_idx])) / 1000)
-                continue
-
-            break
-        self.__request_times[self.__curr_idx] = now
-        self.__curr_idx = (self.__curr_idx + 1) % self.__per_second_rate
-        yield self
+            self.__request_times[self.__curr_idx] = now
+            self.__curr_idx = (self.__curr_idx + 1) % self.__per_second_rate
 
 
 class DequeRateLimiter:
@@ -66,23 +72,24 @@ class DequeRateLimiter:
 
     @contextlib.asynccontextmanager
     async def acquire(self, timeout_ms=0):
-        now = timestamp_ms()
+        try:
+            now = timestamp_ms()
 
-        while len(self.__request_times) > 0 and now - self.__request_times[0] >= 1000:
-            self.__request_times.popleft()
+            while len(self.__request_times) > 0 and now - self.__request_times[0] >= 1000:
+                self.__request_times.popleft()
 
-        if len(self.__request_times) >= self.__per_second_rate-1:
-            
-            oldest_request_time = self.__request_times[0]
-            time_to_wait = 1000 - (now - oldest_request_time)
+            if len(self.__request_times) >= self.__per_second_rate:
+                
+                oldest_request_time = self.__request_times[0]
+                time_to_wait = 1000 - (now - oldest_request_time)
 
-            if timeout_ms > 0 and time_to_wait > timeout_ms:
-                raise RateLimiterTimeout()
+                if timeout_ms > 0 and time_to_wait > timeout_ms:
+                    raise RateLimiterTimeout()
 
-            await asyncio.sleep(time_to_wait / 1000)
-
-        self.__request_times.append(timestamp_ms())  # Recalculate now to be more accurate.
-        yield self
+                await asyncio.sleep(time_to_wait / 1000)
+            yield self
+        finally:
+            self.__request_times.append(timestamp_ms())
 
 
 class TokenBucketRateLimiter:
