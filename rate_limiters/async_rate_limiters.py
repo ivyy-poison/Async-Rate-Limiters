@@ -4,16 +4,11 @@ import asyncio
 import collections
 from utils import timestamp_ms
 
+from .base import BaseRateLimiter
+
 import abc
 import contextlib
 from contextlib import asynccontextmanager
-
-class BaseRateLimiter(abc.ABC):
-    @abc.abstractmethod
-    @contextlib.asynccontextmanager
-    async def acquire(self):
-        """Asynchronously acquire access, respecting the rate limit."""
-        yield
 
 class OriginalRateLimiter(BaseRateLimiter):
     def __init__(self, per_second_rate):
@@ -72,7 +67,7 @@ class DequeRateLimiter(BaseRateLimiter):
         self.__request_times = collections.deque(maxlen=per_second_rate)
 
     @contextlib.asynccontextmanager
-    async def acquire(self, timeout_ms=0):
+    async def acquire(self):
         try:
             now = timestamp_ms()
 
@@ -83,9 +78,6 @@ class DequeRateLimiter(BaseRateLimiter):
                 
                 oldest_request_time = self.__request_times[0]
                 time_to_wait = 1000 - (now - oldest_request_time)
-
-                if timeout_ms > 0 and time_to_wait > timeout_ms:
-                    raise RateLimiterTimeout()
 
                 await asyncio.sleep(time_to_wait / 1000)
             yield self

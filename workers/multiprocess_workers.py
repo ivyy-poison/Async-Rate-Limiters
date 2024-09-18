@@ -7,8 +7,6 @@ from config import PER_SEC_RATE, REQUEST_TTL_MS, VALID_API_KEYS
 import requests
 import time
 import random
-import asyncio
-import aiohttp
 
 def exchange_facing_worker(url: str, api_key: str, queue: Queue, counters: Counters):
     rate_limiter = DequeRateLimiter(PER_SEC_RATE)
@@ -72,38 +70,3 @@ def generate_requests(queue: Queue):
         curr_req_id += 1
         sleep_ms = random.randint(0, MAX_SLEEP_MS)
         time.sleep(sleep_ms / 1000.0)
-
-
-async def fetch(session, url, data):
-    async with session.get(url, params=data) as response:
-        return await response.json()
-
-async def exchange_facing_worker_async(url: str, api_key: str, queue: Queue, counters: Counters):
-    rate_limiter = DequeRateLimiter(PER_SEC_RATE)
-    start_time = time.time()
-
-    async with aiohttp.ClientSession() as session:
-        while time.time() - start_time < 10:
-            request: Request = queue.get()
-            remaining_ttl = REQUEST_TTL_MS - (timestamp_ms() - request.create_time)
-            if remaining_ttl <= 0:
-                counters.increment_ignored_count()
-                continue
-
-            try:
-                nonce = timestamp_ms()
-                with rate_limiter.acquire():
-                    data = {'api_key': api_key, 'nonce': nonce, 'req_id': request.req_id}
-                    json = await fetch(session, url, data)
-                    if json['status'] == 'OK':
-                        counters.increment_count()
-                    else:
-                        counters.increment_error_count()
-            except RateLimiterTimeout:
-                counters.increment_ignored_count()
-
-def exchange_facing_worker_with_async(url: str, api_key: str, queue: Queue, counters: Counters):
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(exchange_facing_worker_async(url, api_key, queue, counters))
-    loop.close()
