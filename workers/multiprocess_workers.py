@@ -1,5 +1,6 @@
 from multiprocessing import Queue
-from models import MultithreadedCounters as Counters, Request, RateLimiterTimeout
+from counters import MultiProcessCounters as Counters
+from models import Request, RateLimiterTimeout
 from rate_limiters import MultithreadDequeRateLimiter as DequeRateLimiter
 from utils import timestamp_ms
 from config import PER_SEC_RATE, REQUEST_TTL_MS, VALID_API_KEYS

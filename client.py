@@ -3,11 +3,13 @@ import cProfile
 import asyncio
 from asyncio import Queue
 
-from models import Counters
+from counters import Counters
 from logger import configure_logger
 from workers import exchange_facing_worker_async as exchange_facing_worker, generate_requests
 from config import VALID_API_KEYS, SERVER_PORT, ENDPOINT_STUB
 from utils import log_count_to_file
+
+
 
 def main():
     url = f"http://localhost:{SERVER_PORT}{ENDPOINT_STUB}"

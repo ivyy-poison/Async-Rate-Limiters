@@ -4,10 +4,11 @@ import aiohttp
 import asyncio
 import random
 import async_timeout
-from models import Counters, Request, RateLimiterTimeout
+from counters import Counters
+from models import Request, RateLimiterTimeout
 from rate_limiters import DequeRateLimiter, CircularArrayRateLimiter, TokenBucketRateLimiter, OriginalRateLimiter
 from utils import timestamp_ms
-from config import VALID_API_KEYS, REQUEST_TTL_MS, PER_SEC_RATE, DURATION_MS_BETWEEN_REQUESTS
+from config import VALID_API_KEYS, REQUEST_TTL_MS, PER_SEC_RATE
 
 async def generate_requests(queue: Queue) -> None:
     """

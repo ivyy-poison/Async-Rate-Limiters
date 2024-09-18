@@ -1,2 +1,2 @@
-from .models import Counters, Request, RateLimiterTimeout
-from .multiprocess_models import Counters as MultithreadedCounters
+from .models import Request, RateLimiterTimeout
+# from ..counters import Counters, MultiProcessCounters, BaseCounters
