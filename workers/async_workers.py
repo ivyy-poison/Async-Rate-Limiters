@@ -5,7 +5,7 @@ import asyncio
 import random
 import async_timeout
 from counters import Counters
-from models import Request, RateLimiterTimeout
+from request import Request
 from rate_limiters import DequeRateLimiter, CircularArrayRateLimiter, TokenBucketRateLimiter, OriginalRateLimiter
 from utils import timestamp_ms
 from config import VALID_API_KEYS, REQUEST_TTL_MS, PER_SEC_RATE
@@ -55,6 +55,7 @@ async def exchange_facing_worker(url: str, api_key: str, queue: Queue, logger: l
                             else:
                                 counters.increment_error_count()
                                 logger.warning(f"API response: status {resp.status}, resp {json}")
-            except RateLimiterTimeout:
-                counters.increment_ignored_count()
-                logger.warning(f"ignoring request {request.req_id} in limiter due to TTL")
+            except Exception as e:
+                counters.increment_error_count()
+                logger.warning(f"Exception: {e}")
+

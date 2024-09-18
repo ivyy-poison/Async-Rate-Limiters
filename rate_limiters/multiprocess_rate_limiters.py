@@ -2,7 +2,6 @@ import contextlib
 import collections
 from utils import timestamp_ms
 import time
-from models import RateLimiterTimeout
 from .base import BaseRateLimiter
 
 class DequeRateLimiter(BaseRateLimiter):

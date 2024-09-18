@@ -1,6 +1,6 @@
 from multiprocessing import Queue
 from counters import MultiProcessCounters as Counters
-from models import Request, RateLimiterTimeout
+from request import Request
 from rate_limiters import MultithreadDequeRateLimiter as DequeRateLimiter
 from utils import timestamp_ms
 from config import PER_SEC_RATE, REQUEST_TTL_MS, VALID_API_KEYS
@@ -28,8 +28,9 @@ def exchange_facing_worker(url: str, api_key: str, queue: Queue, counters: Count
                     counters.increment_count()
                 else:
                     counters.increment_error_count()
-        except RateLimiterTimeout:
-            counters.increment_ignored_count()
+        except Exception as e:
+            print(f"Exception: {e}")
+            counters.increment_error_count()
 
 def exchange_facing_worker_test(url: str, api_key: str, queue: Queue, counters: Counters):
     rate_limiter = DequeRateLimiter(PER_SEC_RATE)
@@ -52,8 +53,9 @@ def exchange_facing_worker_test(url: str, api_key: str, queue: Queue, counters: 
                     counters.increment_count()
                 else:
                     counters.increment_error_count()
-        except RateLimiterTimeout:
-            counters.increment_ignored_count()
+        except Exception as e:
+            print(f"Exception: {e}")
+            counters.increment_error_count()
 
 def generate_requests(queue: Queue):
     """
