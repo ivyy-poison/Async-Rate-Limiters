@@ -34,8 +34,7 @@ per_api_key_state = defaultdict(lambda: PerApiKeyState())
 def api_request():
     api_key = request.values.get('api_key')
     if api_key not in VALID_API_KEYS:
-        return jsonify({"status": "error", "error_msg": f"invalid api key {api_key}"}), 401
-        # return abort(401)
+        return abort(401)
 
     state = per_api_key_state[api_key]
     incoming_latency_ms = random.randint(0, MAX_LATENCY_MS)
