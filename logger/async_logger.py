@@ -4,7 +4,6 @@ import sys
 def configure_logger(name=None):
     logger = logging.getLogger(name)
     if name is None:
-        # only add handlers to root logger
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
         sh = logging.StreamHandler(sys.stdout)
