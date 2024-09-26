@@ -4,7 +4,9 @@ import psutil
 from multiprocessing import Process, Queue
 
 # Third-party libraries
-from models import MultithreadedCounters as Counters
+import datetime
+import os
+from counters import MultiProcessCounters as Counters, BaseCounters
 from rate_limiters import MultithreadDequeRateLimiter as DequeRateLimiter
 from config import VALID_API_KEYS
 from workers import (
@@ -12,7 +14,7 @@ from workers import (
     exchange_facing_worker_multithread_test as exchange_facing_worker_test, 
     generate_requests_multithread as generate_requests
 )
-from utils import log_count_to_file_multithread as log_count_to_file
+from utils import log_count_to_file
 
 def main():
     url = "http://127.0.0.1:9999/api/request"

@@ -1,15 +1,11 @@
 import time
 import random
 from collections import defaultdict
-
+from utils import timestamp_ms
+from config import MAX_LATENCY_MS, MAX_429_REJECTS, VALID_API_KEYS, SERVER_PORT, ENDPOINT_STUB
 from flask import Flask, request, jsonify, abort
 
 app = Flask(__name__)
-
-
-def timestamp_ms():
-    return int(time.time() * 1000)
-
 
 class RateLimiter:
     def __init__(self, per_second_rate):
@@ -32,18 +28,9 @@ class PerApiKeyState:
         self.rate_limiter = RateLimiter(20)
         self.error_429s = 0
 
-
-VALID_API_KEYS = ['UT4NHL1J796WCHULA1750MXYF9F5JYA6',
-                  '8TY2F3KIL38T741G1UCBMCAQ75XU9F5O',
-                  '954IXKJN28CBDKHSKHURQIVLQHZIEEM9',
-                  'EUU46ID478HOO7GOXFASKPOZ9P91XGYS',
-                  '46V5EZ5K2DFAGW85J18L50SGO25WJ5JE']
 per_api_key_state = defaultdict(lambda: PerApiKeyState())
-MAX_LATENCY_MS = 50
-MAX_429_REJECTS = 10
 
-
-@app.route("/api/request", methods=["GET"])
+@app.route(ENDPOINT_STUB, methods=["GET"])
 def api_request():
     api_key = request.values.get('api_key')
     if api_key not in VALID_API_KEYS:
@@ -104,5 +91,5 @@ def api_blocked(e):
     return jsonify({"status": "error", "error_msg": "too many rate limit errors: blocked"}), 429
 
 
-app.run(port=9999)
+app.run(port=SERVER_PORT)
 
